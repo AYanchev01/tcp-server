@@ -1,0 +1,4 @@
+build/
+.vscode/
+server.exe
+client.exe
