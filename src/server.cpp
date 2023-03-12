@@ -18,51 +18,60 @@ void clientHandler(SOCKET clientSocket) {
     // Loop to receive data from the client
     do {
         result = recv(clientSocket, buffer, sizeof(buffer), 0);
-        std::cout << "Received data from : " << clientSocket << " " << std::string(buffer, result) << std::endl;
+
+        if (result == 0) {
+            // Client disconnected
+            std::cout << "Client disconnected." << std::endl;
+            break;
+        }
+        else if (result < 0) {
+            // Error occurred
+            std::cerr << "Error: " << WSAGetLastError() << std::endl;
+            break;
+        }
+        
         // Check if the client is sending a file
         bool isSendingFile = false;
         std::string filename;
-        if (std::string(buffer).substr(0, 5) == "file ") {
-        isSendingFile = true;
-        filename = std::string(buffer).substr(5);
+        if (std::string(buffer, result).substr(0, 5) == "file ") {
+            isSendingFile = true;
+            filename = std::string(buffer).substr(5);
         }
 
-        if (result > 0) {
-            if (isSendingFile)
-            {
-                std::ofstream outputFile(filename, std::ios::binary);
+        // Send an acknowledgement message to the client
+        const char* ackMessage = "OK";
+        int ok_status = send(clientSocket, ackMessage, strlen(ackMessage), 0);
+        if (ok_status == SOCKET_ERROR) {
+            std::cerr << "send failed: " << WSAGetLastError() << std::endl;
+            closesocket(clientSocket);
+            WSACleanup();
+            return;
+        }
 
-                // Read file data from the client and write it to the file
-                int bytesRead;
-                do {
-                    result = recv(clientSocket, buffer, BUFFER_SIZE, 0);
-                    if (result == SOCKET_ERROR) {
-                        std::cerr << "recv failed: " << WSAGetLastError() << std::endl;
-                        closesocket(clientSocket);
-                        WSACleanup();
-                        return;
-                    }
-                    bytesRead = result;
-                    outputFile.write(buffer, bytesRead);
-                } while (bytesRead == BUFFER_SIZE);
-
-                // Close the file
-                outputFile.close();
-            }
-            else
-            {
-                // Data was received, process it here
-                std::cout << "Received data from : " << clientSocket << " " << std::string(buffer, result) << std::endl;
-            }
+        if (isSendingFile)
+        {
+            std::ofstream outputFile(filename, std::ios::binary);
+            // Read file data from the client and write it to the file
+            int bytesRead;
+            do {
+                bytesRead = recv(clientSocket, buffer, BUFFER_SIZE, 0);
+                if (bytesRead == SOCKET_ERROR) {
+                    std::cerr << "recv failed: " << WSAGetLastError() << std::endl;
+                    closesocket(clientSocket);
+                    WSACleanup();
+                    return;
+                }
+                outputFile.write(buffer, bytesRead);
+            } while (bytesRead == BUFFER_SIZE);
+            // Close the file
+            outputFile.close();
         }
-        else if (result == 0) {
-            // Client disconnected
-            std::cout << "Client disconnected." << std::endl;
+        else
+        {
+            // Data was received, process it here
+            std::cout << "Received data from : " << clientSocket << " " << std::string(buffer, result) << std::endl;
         }
-        else {
-            // Error occurred
-            std::cerr << "Error: " << WSAGetLastError() << std::endl;
-        }
+        
     } while (result > 0);
 
     // Close the client socket

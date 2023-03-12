@@ -80,41 +80,51 @@ int main(int argc, char** argv) {
     } 
     else if (isSendingFile)
     {
-        // Send the file to the server
-        std::ifstream inputFile(filename, std::ios::binary);
-        if (inputFile) {
-            // Send the filename to the server
-            message = "file " + filename;
-            int result = send(clientSocket, message.c_str(), message.size(), 0);
-            if (result == SOCKET_ERROR) {
-                std::cerr << "send failed: " << WSAGetLastError() << std::endl;
-                closesocket(clientSocket);
-                WSACleanup();
-                return 1;
-            }
-
-            // Send the file data to the server
-            char buffer[BUFFER_SIZE];
-            do {
-                inputFile.read(buffer, BUFFER_SIZE);
-                int bytesRead = inputFile.gcount();
-                if (bytesRead > 0) {
-                    result = send(clientSocket, buffer, bytesRead, 0);
-                    if (result == SOCKET_ERROR) {
-                        std::cerr << "send failed: " << WSAGetLastError() << std::endl;
-                        closesocket(clientSocket);
-                        WSACleanup();
-                        return 1;
-                    }
-                }
-            } while (inputFile.good());
-
-            // Close the file
-            inputFile.close();
-        } else {
-            std::cout << "Failed to open file." << std::endl;
+        // Send the filename to the server
+        message = "file " + filename;
+        int result = send(clientSocket, message.c_str(), message.size(), 0);
+        if (result == SOCKET_ERROR) {
+            std::cerr << "send failed: " << WSAGetLastError() << std::endl;
+            closesocket(clientSocket);
+            WSACleanup();
             return 1;
         }
+
+        // Wait for acknowledgement from the server
+        char buffer[BUFFER_SIZE];
+        result = recv(clientSocket, buffer, BUFFER_SIZE, 0);
+        if (result == SOCKET_ERROR) {
+            // Handle error...
+        }
+        // Check if the server sent an acknowledgement
+        if (std::string(buffer, result) == "OK") {
+            // Send the file data to the server
+            std::ifstream inputFile(filename, std::ios::binary);
+            if (inputFile) {
+                char buffer[BUFFER_SIZE];
+                do {
+                    inputFile.read(buffer, BUFFER_SIZE);
+                    int bytesRead = inputFile.gcount();
+                    if (bytesRead > 0) {
+                        result = send(clientSocket, buffer, bytesRead, 0);
+                        if (result == SOCKET_ERROR) {
+                            std::cerr << "send failed: " << WSAGetLastError() << std::endl;
+                            closesocket(clientSocket);
+                            WSACleanup();
+                            return 1;
+                        }
+                    }
+                } while (inputFile.good());
+                // Close the file
+                inputFile.close();
+            } else {
+                std::cout << "Failed to open file." << std::endl;
+                return 1;
+            }
+        } else {
+            // Handle error...
+        }
+
     }
 
     // Close the client socket
