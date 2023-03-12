@@ -1,16 +1,19 @@
 #include <iostream>
 #include <thread>
 #include <vector>
+#include <unordered_set>
+#include "../include/utils.h"
 #include <WinSock2.h>
 
 
 // Define the maximum number of clients that can connect to the server
 constexpr int MAX_CLIENTS = 5;
+std::unordered_set<SOCKET> active_connections;
 
-void clientHandler(SOCKET clientSocket) {
+void read_message(int clientSocket)
+{
     char buffer[1024];
     int result = 0;
-
     // Loop to receive data from the client
     do {
         result = recv(clientSocket, buffer, sizeof(buffer), 0);
@@ -23,13 +26,88 @@ void clientHandler(SOCKET clientSocket) {
         }
         else if (result == 0) {
             // Client disconnected
+            active_connections.erase(clientSocket);
             std::cout << "Client disconnected." << std::endl;
         }
         else {
             // Error occurred
+            active_connections.erase(clientSocket);
             std::cerr << "Error: " << WSAGetLastError() << std::endl;
         }
     } while (result > 0);
+}
+
+void read_file(int clientSocket)
+{
+    int len = 0;
+    int result = 0;
+    char buffer[1024];
+
+
+	int r_size = recv(clientSocket, &len, sizeof(len), 0);
+	if(r_size < sizeof(len)) {
+		return;
+	}
+
+	char *filename = new char[len];
+
+	recv(clientSocket, filename, len, 0);
+
+    // Loop to receive data from the client
+    do {
+        result = recv(clientSocket, buffer, sizeof(buffer), 0);
+        if (result > 0) {
+            // Data was received, process it here
+            std::cout << "Received file name from : " << clientSocket << " " << std::string(buffer, result) << std::endl;
+
+            std::ofstream file(filename, std::ios::binary);
+
+            uint8_t* content = new uint8_t[50000];
+	        result = recv(clientSocket, (char*)content, 50000, 0);
+
+	        file.write((const char*)content, result);
+
+	        std::cout << "File received: " << filename << std::endl;
+
+	        delete [] filename;
+	        delete [] content;
+        }
+        else if (result == 0) {
+            // Client disconnected
+            active_connections.erase(clientSocket);
+            std::cout << "Client disconnected." << std::endl;
+        }
+        else {
+            // Error occurred
+            active_connections.erase(clientSocket);
+            std::cerr << "Error: " << WSAGetLastError() << std::endl;
+        }
+    } while (result > 0);
+
+	std::ofstream file(filename, std::ios::binary);
+
+
+}
+
+void clientHandler(SOCKET clientSocket) {
+    char buffer[1024];
+    int command = 0;
+    int r_size = recv(clientSocket, (char*)&command, sizeof(command), 0);
+    if(r_size < sizeof(command))
+    {
+        std::cout << "Error receiving command" << std::endl;
+        return;
+    }
+
+
+    if((Command)command == Command::MESSAGE)
+    {
+        read_message(clientSocket);
+    }
+    else if((Command)command == Command::FILE)
+    {
+        read_file(sockID);
+    }
 
     // Close the client socket
     closesocket(clientSocket);
@@ -80,7 +158,7 @@ int main() {
     std::vector<std::thread> threads;
 
     // Accept incoming connections and spawn threads to handle them
-    while (threads.size() < MAX_CLIENTS) {
+    while (active_connections.size() < MAX_CLIENTS) {
         SOCKET clientSocket = accept(serverSocket, NULL, NULL);
         if (clientSocket == INVALID_SOCKET) {
             std::cerr << "accept failed: " << WSAGetLastError() << std::endl;
@@ -88,6 +166,7 @@ int main() {
         }
 
         // Spawn a thread to handle the client
+        active_connections.insert(clientSocket);
         threads.emplace_back(clientHandler, clientSocket);
     }
 
