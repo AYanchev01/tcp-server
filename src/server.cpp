@@ -16,7 +16,7 @@ void clientHandler(SOCKET clientSocket) {
         result = recv(clientSocket, buffer, sizeof(buffer), 0);
         if (result > 0) {
             // Data was received, process it here
-            std::cout << "Received data: " << std::string(buffer, result) << std::endl;
+            std::cout << "Received data from : " << clientSocket << " " << std::string(buffer, result) << std::endl;
 
             // Echo the data back to the client
             send(clientSocket, buffer, result, 0);
@@ -67,7 +67,7 @@ int main() {
     }
 
     // Listen for incoming connections
-    result = listen(serverSocket, SOMAXCONN);
+    result = listen(serverSocket, MAX_CLIENTS);
     if (result == SOCKET_ERROR) {
         std::cerr << "listen failed: " << WSAGetLastError() << std::endl;
         closesocket(serverSocket);
