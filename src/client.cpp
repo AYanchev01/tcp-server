@@ -2,9 +2,33 @@
 #include <string>
 #include <fstream>
 #include <cstring>
+#include <thread>
+#include <atomic>
 #include <WinSock2.h>
 
 constexpr size_t BUFFER_SIZE = 1024;
+
+void receiveMessages(SOCKET clientSocket, std::atomic<bool>& running) {
+    char buffer[BUFFER_SIZE];
+    int result = 0;
+    while (running) {
+        // Receive data from the server
+        result = recv(clientSocket, buffer, sizeof(buffer), 0);
+        if (result > 0) {
+            // Data was received, process it here
+            std::string message(buffer, result);
+            std::cout << message << std::endl;
+        } else if (result == 0) {
+            // Server disconnected
+            std::cout << "Server disconnected." << std::endl;
+            running = false;
+        } else {
+            // Error occurred
+            std::cerr << "Error: " << WSAGetLastError() << std::endl;
+            running = false;
+        }
+    }
+}
 
 int main(int argc, char** argv) {
 
@@ -58,19 +82,23 @@ int main(int argc, char** argv) {
 
     std::cout << "Connected to server." << std::endl;
 
+
+    std::atomic<bool> running(true);
+    std::thread receiveThread(receiveMessages, clientSocket, std::ref(running));
+
     // Send and receive data from the server
     std::string message;
     if (isSendingMessage)
     {
         do {
             // Read a message from the user
-            std::cout << "> ";
             std::getline(std::cin, message);
 
             // Send the message to the server
             result = send(clientSocket, message.c_str(), message.length(), 0);
             if (result == SOCKET_ERROR) {
                 std::cerr << "send failed: " << WSAGetLastError() << std::endl;
+                running = false;
                 closesocket(clientSocket);
                 WSACleanup();
                 return 1;
@@ -85,6 +113,7 @@ int main(int argc, char** argv) {
         int result = send(clientSocket, message.c_str(), message.size(), 0);
         if (result == SOCKET_ERROR) {
             std::cerr << "send failed: " << WSAGetLastError() << std::endl;
+            running = false;
             closesocket(clientSocket);
             WSACleanup();
             return 1;
@@ -109,6 +138,7 @@ int main(int argc, char** argv) {
                         result = send(clientSocket, buffer, bytesRead, 0);
                         if (result == SOCKET_ERROR) {
                             std::cerr << "send failed: " << WSAGetLastError() << std::endl;
+                            running = false;
                             closesocket(clientSocket);
                             WSACleanup();
                             return 1;
@@ -119,6 +149,7 @@ int main(int argc, char** argv) {
                 inputFile.close();
             } else {
                 std::cout << "Failed to open file." << std::endl;
+                running = false;
                 return 1;
             }
         } else {
@@ -126,6 +157,10 @@ int main(int argc, char** argv) {
         }
 
     }
+
+    // Wait for the receive thread to exit
+    running = false;
+    receiveThread.join();
 
     // Close the client socket
     closesocket(clientSocket);

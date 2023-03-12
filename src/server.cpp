@@ -2,18 +2,24 @@
 #include <thread>
 #include <vector>
 #include <fstream>
+#include <cstring>
+#include <unordered_set>
+#include <sstream>
 #include <WinSock2.h>
 
 
 // Define the maximum number of clients that can connect to the server
 constexpr int MAX_CLIENTS = 5;
+std::unordered_set<SOCKET> active_connections;
+bool isChatServer = false;
+
 
 constexpr size_t BUFFER_SIZE = 1024;
 
 void clientHandler(SOCKET clientSocket) {
     char buffer[BUFFER_SIZE];
     int result = 0;
-
+    active_connections.insert(clientSocket);
     
     // Loop to receive data from the client
     do {
@@ -29,24 +35,25 @@ void clientHandler(SOCKET clientSocket) {
             std::cerr << "Error: " << WSAGetLastError() << std::endl;
             break;
         }
-        
+
         // Check if the client is sending a file
         bool isSendingFile = false;
         std::string filename;
         if (std::string(buffer, result).substr(0, 5) == "file ") {
             isSendingFile = true;
             filename = std::string(buffer).substr(5);
+
+            // Send an acknowledgement message to the client
+            const char* ackMessage = "OK";
+            int ok_status = send(clientSocket, ackMessage, strlen(ackMessage), 0);
+            if (ok_status == SOCKET_ERROR) {
+                std::cerr << "send failed: " << WSAGetLastError() << std::endl;
+                closesocket(clientSocket);
+                WSACleanup();
+                break;
+            }
         }
 
-        // Send an acknowledgement message to the client
-        const char* ackMessage = "OK";
-        int ok_status = send(clientSocket, ackMessage, strlen(ackMessage), 0);
-        if (ok_status == SOCKET_ERROR) {
-            std::cerr << "send failed: " << WSAGetLastError() << std::endl;
-            closesocket(clientSocket);
-            WSACleanup();
-            return;
-        }
 
         if (isSendingFile)
         {
@@ -59,7 +66,7 @@ void clientHandler(SOCKET clientSocket) {
                     std::cerr << "recv failed: " << WSAGetLastError() << std::endl;
                     closesocket(clientSocket);
                     WSACleanup();
-                    return;
+                    break;
                 }
                 outputFile.write(buffer, bytesRead);
             } while (bytesRead == BUFFER_SIZE);
@@ -68,18 +75,40 @@ void clientHandler(SOCKET clientSocket) {
         }
         else
         {
-            // Data was received, process it here
-            std::cout << "Received data from : " << clientSocket << " " << std::string(buffer, result) << std::endl;
+            if (isChatServer)
+            {
+                for (const auto& client : active_connections)
+                {
+                    if (client != clientSocket)
+                    {
+                        std::ostringstream oss;
+                        oss << client << ": " << std::string(buffer,result);
+                        send(client, oss.str().c_str(), strlen(oss.str().c_str()), 0);
+                    }
+                }
+            }
+            else
+            {                
+                // Data was received, process it here
+                std::cout << "Received data from : " << clientSocket << " " << std::string(buffer, result) << std::endl;
+            }
         }
         
     } while (result > 0);
-
+    
+    active_connections.erase(clientSocket);
     // Close the client socket
     closesocket(clientSocket);
 }
 
 
-int main() {
+int main(int argc, char** argv) {
+
+    if (argc == 2 && (std::strcmp(argv[1],"-c") == 0))
+    {
+        isChatServer = true;
+    }
+
     // Initialize Winsock
     WSADATA wsaData;
     int result = WSAStartup(MAKEWORD(2, 2), &wsaData);
@@ -123,7 +152,7 @@ int main() {
     std::vector<std::thread> threads;
 
     // Accept incoming connections and spawn threads to handle them
-    while (threads.size() < MAX_CLIENTS) {
+    while (active_connections.size() < MAX_CLIENTS) {
         SOCKET clientSocket = accept(serverSocket, NULL, NULL);
         if (clientSocket == INVALID_SOCKET) {
             std::cerr << "accept failed: " << WSAGetLastError() << std::endl;
