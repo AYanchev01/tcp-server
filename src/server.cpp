@@ -1,25 +1,59 @@
 #include <iostream>
 #include <thread>
 #include <vector>
+#include <fstream>
 #include <WinSock2.h>
 
 
 // Define the maximum number of clients that can connect to the server
 constexpr int MAX_CLIENTS = 5;
 
+constexpr size_t BUFFER_SIZE = 1024;
+
 void clientHandler(SOCKET clientSocket) {
-    char buffer[1024];
+    char buffer[BUFFER_SIZE];
     int result = 0;
 
+    
     // Loop to receive data from the client
     do {
         result = recv(clientSocket, buffer, sizeof(buffer), 0);
-        if (result > 0) {
-            // Data was received, process it here
-            std::cout << "Received data from : " << clientSocket << " " << std::string(buffer, result) << std::endl;
+        std::cout << "Received data from : " << clientSocket << " " << std::string(buffer, result) << std::endl;
+        // Check if the client is sending a file
+        bool isSendingFile = false;
+        std::string filename;
+        if (std::string(buffer).substr(0, 5) == "file ") {
+        isSendingFile = true;
+        filename = std::string(buffer).substr(5);
+        }
 
-            // Echo the data back to the client
-            send(clientSocket, buffer, result, 0);
+        if (result > 0) {
+            if (isSendingFile)
+            {
+                std::ofstream outputFile(filename, std::ios::binary);
+
+                // Read file data from the client and write it to the file
+                int bytesRead;
+                do {
+                    result = recv(clientSocket, buffer, BUFFER_SIZE, 0);
+                    if (result == SOCKET_ERROR) {
+                        std::cerr << "recv failed: " << WSAGetLastError() << std::endl;
+                        closesocket(clientSocket);
+                        WSACleanup();
+                        return;
+                    }
+                    bytesRead = result;
+                    outputFile.write(buffer, bytesRead);
+                } while (bytesRead == BUFFER_SIZE);
+
+                // Close the file
+                outputFile.close();
+            }
+            else
+            {
+                // Data was received, process it here
+                std::cout << "Received data from : " << clientSocket << " " << std::string(buffer, result) << std::endl;
+            }
         }
         else if (result == 0) {
             // Client disconnected
