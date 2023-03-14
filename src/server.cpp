@@ -13,14 +13,17 @@
 constexpr int MAX_CLIENTS = 5;
 std::unordered_set<SOCKET> active_connections;
 bool isChatServer = false;
-
+std::mutex active_connections_mutex;
 
 constexpr size_t BUFFER_SIZE = 1024;
 
 void clientHandler(SOCKET clientSocket) {
     char buffer[BUFFER_SIZE];
     int result = 0;
+
+    active_connections_mutex.lock();
     active_connections.insert(clientSocket);
+    active_connections_mutex.unlock();
     
     // Loop to receive data from the client
     do {
@@ -80,7 +83,8 @@ void clientHandler(SOCKET clientSocket) {
         {
             if (isChatServer)
             {
-                for (const auto& client : active_connections)
+                std::unordered_set<SOCKET> connections = active_connections;
+                for (const auto& client : connections)
                 {
                     if (client != clientSocket)
                     {
@@ -99,7 +103,9 @@ void clientHandler(SOCKET clientSocket) {
         
     } while (result > 0);
     
+    active_connections_mutex.lock();
     active_connections.erase(clientSocket);
+    active_connections_mutex.unlock();
 
     // Close the client socket
     closesocket(clientSocket);
