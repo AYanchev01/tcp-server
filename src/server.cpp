@@ -12,18 +12,15 @@
 // Define the maximum number of clients that can connect to the server
 constexpr int MAX_CLIENTS = 5;
 std::unordered_set<SOCKET> active_connections;
-std::mutex active_connections_mutex;
 bool isChatServer = false;
 
 
-constexpr size_t BUFFER_SIZE = 1024;
+constexpr size_t BUFFER_SIZE = 10000;
 
 void clientHandler(SOCKET clientSocket) {
     char buffer[BUFFER_SIZE];
     int result = 0;
-    active_connections_mutex.lock();
     active_connections.insert(clientSocket);
-    active_connections_mutex.unlock();
     
     // Loop to receive data from the client
     do {
@@ -64,7 +61,9 @@ void clientHandler(SOCKET clientSocket) {
             std::ofstream outputFile(filename, std::ios::binary);
             // Read file data from the client and write it to the file
             int bytesRead;
+            std::cout << "got before while\n";
             do {
+                std::cout << "got in while\n";
                 bytesRead = recv(clientSocket, buffer, BUFFER_SIZE, 0);
                 if (bytesRead == SOCKET_ERROR) {
                     std::cerr << "recv failed: " << WSAGetLastError() << std::endl;
@@ -72,6 +71,7 @@ void clientHandler(SOCKET clientSocket) {
                     WSACleanup();
                     break;
                 }
+                std::cout << "got to writing\n";
                 outputFile.write(buffer, bytesRead);
             } while (bytesRead == BUFFER_SIZE);
             // Close the file
@@ -81,8 +81,7 @@ void clientHandler(SOCKET clientSocket) {
         {
             if (isChatServer)
             {
-                std::unordered_set<SOCKET> connections = active_connections;
-                for (const auto& client : connections)
+                for (const auto& client : active_connections)
                 {
                     if (client != clientSocket)
                     {
@@ -101,9 +100,7 @@ void clientHandler(SOCKET clientSocket) {
         
     } while (result > 0);
     
-    active_connections_mutex.lock();
     active_connections.erase(clientSocket);
-    active_connections_mutex.unlock();
 
     // Close the client socket
     closesocket(clientSocket);

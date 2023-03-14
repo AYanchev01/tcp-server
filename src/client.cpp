@@ -4,28 +4,39 @@
 #include <cstring>
 #include <thread>
 #include <atomic>
+#include <mutex>
+#include <condition_variable>
 #include <WinSock2.h>
 
 constexpr size_t BUFFER_SIZE = 1024;
+std::mutex readyMutex;
+std::condition_variable readyCondVar;
+bool isReadyToSend = false;
 
-void receiveMessages(SOCKET clientSocket, std::atomic<bool>& running) {
+void receiveMessages(SOCKET clientSocket) {
     char buffer[BUFFER_SIZE];
     int result = 0;
-    while (running) {
+    while (true) {
         // Receive data from the server
         result = recv(clientSocket, buffer, sizeof(buffer), 0);
         if (result > 0) {
             // Data was received, process it here
             std::string message(buffer, result);
             std::cout << message << std::endl;
+
+            if (message == "OK")
+            {
+                std::lock_guard<std::mutex> lock(readyMutex);
+                isReadyToSend = true;
+                readyCondVar.notify_one();
+                break;
+            }
         } else if (result == 0) {
             // Server disconnected
             std::cout << "Server disconnected." << std::endl;
-            running = false;
         } else {
             // Error occurred
             std::cerr << "Error: " << WSAGetLastError() << std::endl;
-            running = false;
         }
     }
 }
@@ -83,8 +94,7 @@ int main(int argc, char** argv) {
     std::cout << "Connected to server." << std::endl;
 
 
-    std::atomic<bool> running(true);
-    std::thread receiveThread(receiveMessages, clientSocket, std::ref(running));
+    std::thread receiveThread(receiveMessages, clientSocket);
 
     // Send and receive data from the server
     std::string message;
@@ -98,7 +108,6 @@ int main(int argc, char** argv) {
             result = send(clientSocket, message.c_str(), message.length(), 0);
             if (result == SOCKET_ERROR) {
                 std::cerr << "send failed: " << WSAGetLastError() << std::endl;
-                running = false;
                 closesocket(clientSocket);
                 WSACleanup();
                 return 1;
@@ -113,53 +122,51 @@ int main(int argc, char** argv) {
         int result = send(clientSocket, message.c_str(), message.size(), 0);
         if (result == SOCKET_ERROR) {
             std::cerr << "send failed: " << WSAGetLastError() << std::endl;
-            running = false;
             closesocket(clientSocket);
             WSACleanup();
             return 1;
         }
 
-        // Wait for acknowledgement from the server
-        char buffer[BUFFER_SIZE];
-        result = recv(clientSocket, buffer, BUFFER_SIZE, 0);
-        if (result == SOCKET_ERROR) {
-            // Handle error...
-        }
-        // Check if the server sent an acknowledgement
-        if (std::string(buffer, result) == "OK") {
-            // Send the file data to the server
-            std::ifstream inputFile(filename, std::ios::binary);
-            if (inputFile) {
-                char buffer[BUFFER_SIZE];
-                do {
-                    inputFile.read(buffer, BUFFER_SIZE);
-                    int bytesRead = inputFile.gcount();
-                    if (bytesRead > 0) {
-                        result = send(clientSocket, buffer, bytesRead, 0);
-                        if (result == SOCKET_ERROR) {
-                            std::cerr << "send failed: " << WSAGetLastError() << std::endl;
-                            running = false;
-                            closesocket(clientSocket);
-                            WSACleanup();
-                            return 1;
-                        }
-                    }
-                } while (inputFile.good());
-                // Close the file
-                inputFile.close();
-            } else {
-                std::cout << "Failed to open file." << std::endl;
-                running = false;
-                return 1;
-            }
-        } else {
-            // Handle error...
+        std::unique_lock<std::mutex> lock(readyMutex);
+        readyCondVar.wait(lock ,[]{return isReadyToSend; });
+        isReadyToSend = false;
+
+        std::ifstream inputFile(filename, std::ios::binary);
+        if (!inputFile) {
+            std::cerr << "Failed to open file." << std::endl;
+            return 1;
         }
 
+        // Send the file in chunks
+        char buffer[BUFFER_SIZE];
+        while (inputFile) {
+            // Read a chunk from the file
+            inputFile.read(buffer, BUFFER_SIZE);
+            int bytesRead = inputFile.gcount();
+
+            // Send the chunk to the server
+            int bytesSent = 0;
+            while (bytesSent < bytesRead) {
+                result = send(clientSocket, buffer + bytesSent, bytesRead - bytesSent, 0);
+                if (result == SOCKET_ERROR) {
+                    std::cerr << "send failed: " << WSAGetLastError() << std::endl;
+                    closesocket(clientSocket);
+                    WSACleanup();
+                    return 1;
+                }
+                bytesSent += result;
+            }
+        }
+
+        // Close the file
+        inputFile.close();
+        std::cout << "got to balbal\n";
+    } else {
+        // Handle error...
     }
 
+
     // Wait for the receive thread to exit
-    running = false;
     receiveThread.join();
 
     // Close the client socket
