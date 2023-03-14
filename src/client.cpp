@@ -9,14 +9,16 @@
 #include <WinSock2.h>
 
 constexpr size_t BUFFER_SIZE = 1024;
+constexpr size_t FILE_SIZE = 200000;
+
 std::mutex readyMutex;
 std::condition_variable readyCondVar;
 bool isReadyToSend = false;
 
-void receiveMessages(SOCKET clientSocket) {
+void receiveMessages(SOCKET clientSocket, std::atomic<bool>& running) {
     char buffer[BUFFER_SIZE];
     int result = 0;
-    while (true) {
+    while (running) {
         // Receive data from the server
         result = recv(clientSocket, buffer, sizeof(buffer), 0);
         if (result > 0) {
@@ -34,9 +36,11 @@ void receiveMessages(SOCKET clientSocket) {
         } else if (result == 0) {
             // Server disconnected
             std::cout << "Server disconnected." << std::endl;
+            running = false;
         } else {
             // Error occurred
             std::cerr << "Error: " << WSAGetLastError() << std::endl;
+            running = false;
         }
     }
 }
@@ -93,8 +97,8 @@ int main(int argc, char** argv) {
 
     std::cout << "Connected to server." << std::endl;
 
-
-    std::thread receiveThread(receiveMessages, clientSocket);
+    std::atomic<bool> running(true);
+    std::thread receiveThread(receiveMessages, clientSocket, std::ref(running));
 
     // Send and receive data from the server
     std::string message;
@@ -108,6 +112,7 @@ int main(int argc, char** argv) {
             result = send(clientSocket, message.c_str(), message.length(), 0);
             if (result == SOCKET_ERROR) {
                 std::cerr << "send failed: " << WSAGetLastError() << std::endl;
+                running = false;
                 closesocket(clientSocket);
                 WSACleanup();
                 return 1;
@@ -122,6 +127,7 @@ int main(int argc, char** argv) {
         int result = send(clientSocket, message.c_str(), message.size(), 0);
         if (result == SOCKET_ERROR) {
             std::cerr << "send failed: " << WSAGetLastError() << std::endl;
+            running = false;
             closesocket(clientSocket);
             WSACleanup();
             return 1;
@@ -134,14 +140,15 @@ int main(int argc, char** argv) {
         std::ifstream inputFile(filename, std::ios::binary);
         if (!inputFile) {
             std::cerr << "Failed to open file." << std::endl;
+            running = false;
             return 1;
         }
 
         // Send the file in chunks
-        char buffer[BUFFER_SIZE];
+        char buffer[FILE_SIZE];
         while (inputFile) {
             // Read a chunk from the file
-            inputFile.read(buffer, BUFFER_SIZE);
+            inputFile.read(buffer, FILE_SIZE);
             int bytesRead = inputFile.gcount();
 
             // Send the chunk to the server
@@ -150,6 +157,7 @@ int main(int argc, char** argv) {
                 result = send(clientSocket, buffer + bytesSent, bytesRead - bytesSent, 0);
                 if (result == SOCKET_ERROR) {
                     std::cerr << "send failed: " << WSAGetLastError() << std::endl;
+                    running = false;
                     closesocket(clientSocket);
                     WSACleanup();
                     return 1;
@@ -160,7 +168,7 @@ int main(int argc, char** argv) {
 
         // Close the file
         inputFile.close();
-        std::cout << "got to balbal\n";
+        running = false;
     } else {
         // Handle error...
     }

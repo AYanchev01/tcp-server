@@ -15,7 +15,7 @@ std::unordered_set<SOCKET> active_connections;
 bool isChatServer = false;
 
 
-constexpr size_t BUFFER_SIZE = 10000;
+constexpr size_t BUFFER_SIZE = 1024;
 
 void clientHandler(SOCKET clientSocket) {
     char buffer[BUFFER_SIZE];
@@ -60,10 +60,9 @@ void clientHandler(SOCKET clientSocket) {
         {
             std::ofstream outputFile(filename, std::ios::binary);
             // Read file data from the client and write it to the file
+
             int bytesRead;
-            std::cout << "got before while\n";
             do {
-                std::cout << "got in while\n";
                 bytesRead = recv(clientSocket, buffer, BUFFER_SIZE, 0);
                 if (bytesRead == SOCKET_ERROR) {
                     std::cerr << "recv failed: " << WSAGetLastError() << std::endl;
@@ -71,9 +70,9 @@ void clientHandler(SOCKET clientSocket) {
                     WSACleanup();
                     break;
                 }
-                std::cout << "got to writing\n";
                 outputFile.write(buffer, bytesRead);
             } while (bytesRead == BUFFER_SIZE);
+
             // Close the file
             outputFile.close();
         }
