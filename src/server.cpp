@@ -1,46 +1,89 @@
-#include <iostream>
-#include <thread>
-#include <vector>
-#include <fstream>
-#include <cstring>
-#include <unordered_set>
-#include <sstream>
-#include <mutex>
-#include <WinSock2.h>
+#include "../include/server.h"
 
 
-// Define the maximum number of clients that can connect to the server
-constexpr int MAX_CLIENTS = 5;
-std::unordered_set<SOCKET> active_connections;
-bool isChatServer = false;
-std::mutex active_connections_mutex;
+Server::Server()
+    : mpIsChatServer(false), mServerSocket(INVALID_SOCKET)
+{
+}
 
-constexpr size_t BUFFER_SIZE = 1024;
+Server::~Server()
+{
+    if (mServerSocket != INVALID_SOCKET) {
+        closesocket(mServerSocket);
+    }
 
-void clientHandler(SOCKET clientSocket) {
+    for (auto& thread : mThreads) {
+        thread.join();
+    }
+
+    closesocket(mServerSocket);
+    WSACleanup();
+}
+
+bool Server::init()
+{
+    // Initialize win sock
+    WSADATA wsaData;
+    int result = WSAStartup(MAKEWORD(2, 2), &wsaData);
+    if (result != 0) {
+        std::cerr << "WSAStartup failed: " << result << std::endl;
+        return false;
+    }
+
+    // Create a TCP socket
+    mServerSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (mServerSocket == INVALID_SOCKET) {
+        std::cerr << "socket failed: " << WSAGetLastError() << std::endl;
+        WSACleanup();
+        return false;
+    }
+
+    // Bind the socket to a port
+    mAddress.sin_family = AF_INET;
+    mAddress.sin_port = htons(12345);
+    mAddress.sin_addr.s_addr = htonl(INADDR_ANY);
+    result = bind(mServerSocket, (sockaddr*)&mAddress, sizeof(mAddress));
+
+    if (result == SOCKET_ERROR) {
+        std::cerr << "Bind failed: " << WSAGetLastError() << std::endl;
+        closesocket(mServerSocket);
+        WSACleanup();
+        return false;
+    }
+
+    // Listen for incoming connections
+    result = listen(mServerSocket, MAX_CLIENTS);
+    if (result == SOCKET_ERROR) {
+        std::cerr << "Listen failed: " << WSAGetLastError() << std::endl;
+        closesocket(mServerSocket);
+        WSACleanup();
+        return false;
+    }
+
+    std::cout << "Server listening on port 12345..." << std::endl;
+    return true;
+}
+
+void Server::handle_client(SOCKET clientSocket) {
     char buffer[BUFFER_SIZE];
     int result = 0;
 
-    active_connections_mutex.lock();
-    active_connections.insert(clientSocket);
-    active_connections_mutex.unlock();
+    mActiveConnectionsMutex.lock();
+    mActiveConnections.insert(clientSocket);
+    mActiveConnectionsMutex.unlock();
     
-    // Loop to receive data from the client
     do {
         result = recv(clientSocket, buffer, sizeof(buffer), 0);
 
         if (result == 0) {
-            // Client disconnected
             std::cout << "Client disconnected." << std::endl;
             break;
         }
         else if (result < 0) {
-            // Error occurred
             std::cerr << "Error: " << WSAGetLastError() << std::endl;
             break;
         }
 
-        // Check if the client is sending a file
         bool isSendingFile = false;
         std::string filename;
         if (std::string(buffer, result).substr(0, 5) == "file ") {
@@ -51,7 +94,7 @@ void clientHandler(SOCKET clientSocket) {
             const char* ackMessage = "OK";
             int ok_status = send(clientSocket, ackMessage, strlen(ackMessage), 0);
             if (ok_status == SOCKET_ERROR) {
-                std::cerr << "send failed: " << WSAGetLastError() << std::endl;
+                std::cerr << "Send failed: " << WSAGetLastError() << std::endl;
                 closesocket(clientSocket);
                 WSACleanup();
                 break;
@@ -62,13 +105,12 @@ void clientHandler(SOCKET clientSocket) {
         if (isSendingFile)
         {
             std::ofstream outputFile(filename, std::ios::binary);
-            // Read file data from the client and write it to the file
 
             int bytesRead;
             do {
                 bytesRead = recv(clientSocket, buffer, BUFFER_SIZE, 0);
                 if (bytesRead == SOCKET_ERROR) {
-                    std::cerr << "recv failed: " << WSAGetLastError() << std::endl;
+                    std::cerr << "Recv failed: " << WSAGetLastError() << std::endl;
                     closesocket(clientSocket);
                     WSACleanup();
                     break;
@@ -81,108 +123,66 @@ void clientHandler(SOCKET clientSocket) {
         }
         else
         {
-            if (isChatServer)
+            if (mpIsChatServer)
             {
-                std::unordered_set<SOCKET> connections = active_connections;
+                std::unordered_set<SOCKET> connections = mActiveConnections;
                 for (const auto& client : connections)
                 {
                     if (client != clientSocket)
                     {
                         std::ostringstream oss;
-                        oss << client << ": " << std::string(buffer,result);
+                        oss << "ID [" << client << "]: " << std::string(buffer,result);
                         send(client, oss.str().c_str(), strlen(oss.str().c_str()), 0);
                     }
                 }
             }
             else
             {                
-                // Data was received, process it here
-                std::cout << "Received data from : " << clientSocket << " " << std::string(buffer, result) << std::endl;
+                std::cout << "ID [" << clientSocket << "]: " << std::string(buffer, result) << std::endl;
             }
         }
         
     } while (result > 0);
     
-    active_connections_mutex.lock();
-    active_connections.erase(clientSocket);
-    active_connections_mutex.unlock();
+    mActiveConnectionsMutex.lock();
+    mActiveConnections.erase(clientSocket);
+    mActiveConnectionsMutex.unlock();
 
     // Close the client socket
     closesocket(clientSocket);
 }
 
-
-int main(int argc, char** argv) {
-
-    if (argc == 2 && (std::strcmp(argv[1],"-c") == 0))
-    {
-        isChatServer = true;
-    }
-
-    // Initialize Winsock
-    WSADATA wsaData;
-    int result = WSAStartup(MAKEWORD(2, 2), &wsaData);
-    if (result != 0) {
-        std::cerr << "WSAStartup failed: " << result << std::endl;
-        return 1;
-    }
-
-    // Create a TCP socket
-    SOCKET serverSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (serverSocket == INVALID_SOCKET) {
-        std::cerr << "socket failed: " << WSAGetLastError() << std::endl;
-        WSACleanup();
-        return 1;
-    }
-
-    // Bind the socket to a port
-    sockaddr_in serverAddress;
-    serverAddress.sin_family = AF_INET;
-    serverAddress.sin_port = htons(12345);
-    serverAddress.sin_addr.s_addr = htonl(INADDR_ANY);
-    result = bind(serverSocket, (sockaddr*)&serverAddress, sizeof(serverAddress));
-    if (result == SOCKET_ERROR) {
-        std::cerr << "bind failed: " << WSAGetLastError() << std::endl;
-        closesocket(serverSocket);
-        WSACleanup();
-        return 1;
-    }
-
-    // Listen for incoming connections
-    result = listen(serverSocket, MAX_CLIENTS);
-    if (result == SOCKET_ERROR) {
-        std::cerr << "listen failed: " << WSAGetLastError() << std::endl;
-        closesocket(serverSocket);
-        WSACleanup();
-        return 1;
-    }
-
-    std::cout << "Server listening on port 12345..." << std::endl;
-
-    std::vector<std::thread> threads;
-
-    // Accept incoming connections and spawn threads to handle them
-    while (active_connections.size() < MAX_CLIENTS) {
-        SOCKET clientSocket = accept(serverSocket, NULL, NULL);
-        if (clientSocket == INVALID_SOCKET) {
+void Server::accept_connections()
+{
+    // Accept incoming connections and spawn mThreads to handle them
+    while (mActiveConnections.size() < MAX_CLIENTS) {
+        SOCKET client_socket = accept(mServerSocket, NULL, NULL);
+        if (client_socket == INVALID_SOCKET) {
             std::cerr << "accept failed: " << WSAGetLastError() << std::endl;
             continue;
         }
 
         // Spawn a thread to handle the client
-        threads.emplace_back(clientHandler, clientSocket);
+        mThreads.emplace_back(&Server::handle_client,this,client_socket);
+    }
+}
+
+
+
+int main(int argc, char** argv) {
+
+    Server server;
+    if (argc == 2 && (std::strcmp(argv[1],"-c") == 0))
+    {
+        server.mpIsChatServer = true;
     }
 
-    // Wait for all threads to finish
-    for (auto& thread : threads) {
-        thread.join();
+    if (!server.init())
+    {
+        std::cout << "Failed to start server" << std::endl;
     }
 
-    // Close the server socket
-    closesocket(serverSocket);
-
-    // Cleanup Winsock
-    WSACleanup();
+    server.accept_connections();
 
     return 0;
 }

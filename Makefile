@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -std=c++11 -Wall
+CXXFLAGS = -std=c++11 -Wall -I include
 LDLIBS = -lws2_32
 
 BUILD_DIR = build
@@ -12,10 +12,10 @@ server.exe: $(BUILD_DIR)/server.o | $(BUILD_DIR)
 client.exe: $(BUILD_DIR)/client.o | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -o $@ $< $(LDLIBS)
 
-$(BUILD_DIR)/server.o: src/server.cpp | $(BUILD_DIR)
+$(BUILD_DIR)/server.o: src/server.cpp include/server.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/client.o: src/client.cpp | $(BUILD_DIR)
+$(BUILD_DIR)/client.o: src/client.cpp include/client.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(BUILD_DIR):
