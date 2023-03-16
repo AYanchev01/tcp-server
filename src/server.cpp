@@ -80,71 +80,71 @@ void Server::handle_client(SOCKET clientSocket) {
             break;
         }
 
-        bool isSendingFile = false;
-        std::string filename;
-        if (std::string(buffer, result).substr(0, 5) == "file ") {
-            isSendingFile = true;
-            filename = std::string(buffer).substr(5);
+        std::string message(buffer, result);
 
-            // Send an acknowledgement message to the client
-            const char* ackMessage = "OK";
-            int ok_status = send(clientSocket, ackMessage, strlen(ackMessage), 0);
-            if (ok_status == SOCKET_ERROR) {
-                std::cerr << "Send failed: " << WSAGetLastError() << std::endl;
-                closesocket(clientSocket);
-                WSACleanup();
-                break;
-            }
+        if (is_sending_file(message)) {
+            handle_file_transfer(clientSocket, message.substr(5));
         }
-
-
-        if (isSendingFile)
-        {
-            std::ofstream outputFile(filename, std::ios::binary);
-
-            int bytesRead;
-            do {
-                bytesRead = recv(clientSocket, buffer, BUFFER_SIZE, 0);
-                if (bytesRead == SOCKET_ERROR) {
-                    std::cerr << "Recv failed: " << WSAGetLastError() << std::endl;
-                    closesocket(clientSocket);
-                    WSACleanup();
-                    break;
-                }
-                outputFile.write(buffer, bytesRead);
-            } while (bytesRead == BUFFER_SIZE);
-
-            // Close the file
-            outputFile.close();
-        }
-        else
-        {
-            if (mpIsChatServer)
-            {
-                std::unordered_set<SOCKET> connections = mActiveConnections;
-                for (const auto& client : connections)
-                {
-                    if (client != clientSocket)
-                    {
-                        std::ostringstream oss;
-                        oss << "User[" << clientSocket << "]: " << std::string(buffer,result);
-                        send(client, oss.str().c_str(), strlen(oss.str().c_str()), 0);
-                    }
-                }
-            }
-            else
-            {                
-                std::cout << "User[" << clientSocket << "]: " << std::string(buffer, result) << std::endl;
-            }
+        else {
+            handle_chat_message(clientSocket, message);
         }
         
     } while (result > 0);
     
+
     mActiveConnectionsMutex.lock();
     mActiveConnections.erase(clientSocket);
     mActiveConnectionsMutex.unlock();
 
     closesocket(clientSocket);
+}
+
+void Server::handle_chat_message(SOCKET clientSocket, const std::string& message) {
+    if (mpIsChatServer) {
+        std::unordered_set<SOCKET> connections = mActiveConnections;
+        for (const auto& client : connections) {
+            if (client != clientSocket) {
+                std::ostringstream oss;
+                oss << "User[" << clientSocket << "]: " << message;
+                send(client, oss.str().c_str(), oss.str().size(), 0);
+            }
+        }
+    }
+    else {
+        std::cout << "User[" << clientSocket << "]: " << message << std::endl;
+    }
+}
+
+void Server::handle_file_transfer(SOCKET clientSocket, const std::string& filename) {
+    char buffer[BUFFER_SIZE];
+
+    // Send an acknowledgement message to the client
+    const char* ackMessage = "OK";
+    int ok_status = send(clientSocket, ackMessage, strlen(ackMessage), 0);
+    if (ok_status == SOCKET_ERROR) {
+        std::cerr << "Send failed: " << WSAGetLastError() << std::endl;
+        closesocket(clientSocket);
+        WSACleanup();
+        return;
+    }
+
+    std::ofstream outputFile(filename, std::ios::binary);
+    int bytesRead;
+    do {
+        bytesRead = recv(clientSocket, buffer, BUFFER_SIZE, 0);
+        if (bytesRead == SOCKET_ERROR) {
+            std::cerr << "Recv failed: " << WSAGetLastError() << std::endl;
+            closesocket(clientSocket);
+            WSACleanup();
+            break;
+        }
+        outputFile.write(buffer, bytesRead);
+    } while (bytesRead == BUFFER_SIZE);
+    outputFile.close();
+}
+
+bool Server::is_sending_file(const std::string& message) {
+    return message.substr(0, 5) == "file ";
 }
 
 void Server::accept_connections()
