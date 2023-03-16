@@ -153,7 +153,9 @@ int main(int argc, char** argv) {
 
     if (!(argc == 2 && (std::strcmp(argv[1], "-m") == 0)) && !(argc == 3 && (std::strcmp(argv[1], "-f") == 0)))
     {
-        std::cerr << "Usage: " << argv[0] << " [-m | -f filename]" << std::endl;
+        std::cerr << "Usage: .\\client.exe OPTION [FILENAME]" << std::endl << std::endl;
+        std::cerr << "  -m      start messaging mode" << std::endl;
+        std::cerr << "  -f      send file to server"  << std::endl;
         return 1;  
     }
 
