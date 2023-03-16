@@ -74,12 +74,8 @@ void Server::handle_client(SOCKET clientSocket) {
     
     do {
         result = recv(clientSocket, buffer, sizeof(buffer), 0);
-
-        if (result == 0) {
-            std::cout << "Client disconnected." << std::endl;
-            break;
-        }
-        else if (result < 0) {
+        
+        if (result <= 0) {
             std::cerr << "Client[" << clientSocket << "] disconnected." << std::endl;
             break;
         }
