@@ -130,6 +130,7 @@ void Server::handle_file_transfer(SOCKET clientSocket, const std::string& filena
 
     std::ofstream outputFile(filename, std::ios::binary);
     int bytesRead;
+
     do {
         bytesRead = recv(clientSocket, buffer, BUFFER_SIZE, 0);
         if (bytesRead == SOCKET_ERROR) {
@@ -138,8 +139,10 @@ void Server::handle_file_transfer(SOCKET clientSocket, const std::string& filena
             WSACleanup();
             break;
         }
+
         outputFile.write(buffer, bytesRead);
     } while (bytesRead == BUFFER_SIZE);
+
     outputFile.close();
 }
 
@@ -163,7 +166,6 @@ void Server::accept_connections()
 }
 
 
-
 int main(int argc, char** argv) {
 
     Server server;
@@ -174,7 +176,7 @@ int main(int argc, char** argv) {
         std::cerr << "  -c   start chat mode"  << std::endl;
         return 1;  
     }
-    if (argc == 2 && (std::strcmp(argv[1],"-c") == 0))
+    else if (std::strcmp(argv[1],"-c") == 0)
     {
         server.mpIsChatServer = true;
     }
