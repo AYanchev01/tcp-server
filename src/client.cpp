@@ -77,11 +77,8 @@ void Client::receiveMessages(std::atomic<bool>& mIsRunning) {
                 mReadyCondVar.notify_one();
                 break;
             }
-        } else if (result == 0) {
-            std::cout << "Server disconnected." << std::endl;
-            mIsRunning = false;
         } else {
-            std::cerr << "Error: " << WSAGetLastError() << std::endl;
+            std::cout << "Server disconnected." << std::endl;
             mIsRunning = false;
         }
     }

@@ -80,7 +80,7 @@ void Server::handle_client(SOCKET clientSocket) {
             break;
         }
         else if (result < 0) {
-            std::cerr << "Error: " << WSAGetLastError() << std::endl;
+            std::cerr << "Client[" << clientSocket << "] disconnected." << std::endl;
             break;
         }
 
@@ -131,14 +131,14 @@ void Server::handle_client(SOCKET clientSocket) {
                     if (client != clientSocket)
                     {
                         std::ostringstream oss;
-                        oss << "ID [" << client << "]: " << std::string(buffer,result);
+                        oss << "User[" << clientSocket << "]: " << std::string(buffer,result);
                         send(client, oss.str().c_str(), strlen(oss.str().c_str()), 0);
                     }
                 }
             }
             else
             {                
-                std::cout << "ID [" << clientSocket << "]: " << std::string(buffer, result) << std::endl;
+                std::cout << "User[" << clientSocket << "]: " << std::string(buffer, result) << std::endl;
             }
         }
         
