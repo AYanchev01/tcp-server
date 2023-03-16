@@ -172,6 +172,13 @@ void Server::accept_connections()
 int main(int argc, char** argv) {
 
     Server server;
+    if (!(argc == 2 && ((std::strcmp(argv[1], "-c") == 0) || (std::strcmp(argv[1], "-r") == 0))))
+    {
+        std::cerr << "Usage: .\\server.exe OPTION" << std::endl << std::endl;
+        std::cerr << "  -r   start receiving mode" << std::endl;
+        std::cerr << "  -c   start chat mode"  << std::endl;
+        return 1;  
+    }
     if (argc == 2 && (std::strcmp(argv[1],"-c") == 0))
     {
         server.mpIsChatServer = true;
