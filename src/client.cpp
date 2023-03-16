@@ -159,7 +159,6 @@ int main(int argc, char** argv) {
         return 1;  
     }
 
-    // Parse command-line arguments
     bool isSendingMessage = false;
     bool isSendingFile = false;
     std::string filename;

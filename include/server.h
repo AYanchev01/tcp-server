@@ -10,7 +10,7 @@
 #include <mutex>
 #include <WinSock2.h>
 
-constexpr int MAX_CLIENTS = 5;
+constexpr int MAX_CLIENTS = 10;
 constexpr size_t BUFFER_SIZE = 1024;
 
 

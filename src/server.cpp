@@ -148,7 +148,6 @@ void Server::handle_client(SOCKET clientSocket) {
     mActiveConnections.erase(clientSocket);
     mActiveConnectionsMutex.unlock();
 
-    // Close the client socket
     closesocket(clientSocket);
 }
 
